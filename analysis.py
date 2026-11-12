@@ -34,3 +34,38 @@ class NetworkStats:
     def client_disconnected(self):
         with self._lock:
             self.active_clients = max(0, self.active_clients - 1)
+    
+    # Builds one row and saves it to memory + CSV
+    def record(self, client, operation, duration_s, filename="", size_bytes=0, success=True):
+        rate = (size_bytes / (1024 * 1024)) / duration_s if size_bytes and duration_s > 0 else 0.0
+        row = {
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "client": client,
+            "operation": operation,
+            "filename": filename,
+            "size_bytes": size_bytes,
+            "duration_s": round(duration_s, 4),
+            "rate_mbps": round(rate, 2),
+            "concurrent_clients": self.active_clients,
+            "protocol": self.protocol,
+            "success": success,
+        }
+        with self._lock:
+            self.records.append(row)
+            with open(self.csv_path, "a", newline="") as f:
+                csv.DictWriter(f, fieldnames=FIELDS).writerow(row)
+        return row
+
+    # Stopwatch: times whatever runs inside "with stats.track(...)"
+    @contextmanager
+    def track(self, client, operation, filename="", size_bytes=0):
+        start = time.perf_counter()
+        result = {"success": True}
+        try:
+            yield result
+        except Exception:
+            result["success"] = False
+            raise
+        finally:
+            self.record(client, operation, time.perf_counter() - start,
+                        filename, size_bytes, result["success"])
