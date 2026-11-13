@@ -12,7 +12,6 @@ FIELDS = [
     "duration_s", "rate_mbps", "concurrent_clients", "protocol", "success",
 ]
 
-
 class NetworkStats:
     #One shared instance of a CSV per server
     def __init__(self, csv_path="Network_Stats.csv", protocol="TCP"):
@@ -69,3 +68,25 @@ class NetworkStats:
         finally:
             self.record(client, operation, time.perf_counter() - start,
                         filename, size_bytes, result["success"])
+
+    # Quick averages per client operation
+    def summary(self):
+        with self._lock:
+            rows = list(self.records)
+        out = {}
+        for r in rows:
+            s = out.setdefault(r["operation"], {"count": 0, "total_s": 0.0, "rates": []})
+            s["count"] += 1
+            s["total_s"] += r["duration_s"]
+            if r["rate_mbps"]:
+                s["rates"].append(r["rate_mbps"])
+        for s in out.values():
+            s["avg_s"] = round(s["total_s"] / s["count"], 4)
+            s["avg_rate_mbps"] = round(sum(s["rates"]) / len(s["rates"]), 2) if s["rates"] else 0.0
+            del s["rates"], s["total_s"]
+        return out
+
+# Loads the CSV into pandas, for Graphs & analysis
+def load_dataframe(csv_path="Network_Stats.csv"):
+    import pandas as pd
+    return pd.read_csv(csv_path)
